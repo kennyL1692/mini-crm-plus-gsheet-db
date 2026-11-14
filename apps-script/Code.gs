@@ -18,6 +18,13 @@
  * (Optional: if the Settings cell is empty, the APP_PASSWORD Script Property
  *  under Project Settings is used instead.)
  *
+ * AI / MCP access (optional):
+ *   Put a long random key next to API_KEY in the Settings tab (24+ characters).
+ *   The MCP server on Netlify uses it. Clear the cell to switch AI access off.
+ *
+ * Deleted contacts are moved to a "Deleted" tab, not wiped. To restore one,
+ * copy its row back to Contacts (without the last two columns).
+ *
  * When you change this code later, use
  * Deploy → Manage deployments → Edit (pencil) → Version: New version
  * so the URL stays the same.
@@ -25,6 +32,7 @@
 
 const SHEET_NAME = 'Contacts';
 const SETTINGS_SHEET = 'Settings';
+const DELETED_SHEET = 'Deleted';
 const HEADERS = ['id', 'name', 'company', 'phone', 'email', 'status', 'source', 'notes', 'created_at', 'updated_at'];
 const EDITABLE = ['name', 'company', 'phone', 'email', 'status', 'source', 'notes'];
 const STATUSES = ['Lead', 'Prospect', 'Customer', 'Lost'];
@@ -56,7 +64,14 @@ function handle_(body) {
       if (body.token) CacheService.getScriptCache().remove('sess_' + body.token);
       return json_({ ok: true, data: {} });
     }
-    if (!checkSession_(body.token)) {
+    let actor = 'web';
+    if (body.api_key) {
+      if (!checkApiKey_(body.api_key)) {
+        Utilities.sleep(800);
+        return json_({ ok: false, code: 'AUTH', error: 'API key not accepted.' });
+      }
+      actor = 'ai:' + String(body.actor || 'mcp').replace(/[^\w.@ -]/g, '').slice(0, 40);
+    } else if (!checkSession_(body.token)) {
       return json_({ ok: false, code: 'AUTH', error: 'Please log in again.' });
     }
 
@@ -69,7 +84,7 @@ function handle_(body) {
       case 'update':
         return withLock_(() => json_({ ok: true, data: updateContact_(sheet, body.contact || {}) }));
       case 'delete':
-        return withLock_(() => json_({ ok: true, data: deleteContact_(sheet, body.id) }));
+        return withLock_(() => json_({ ok: true, data: deleteContact_(sheet, body.id, actor) }));
       default:
         return json_({ ok: false, error: 'Unknown action.' });
     }
@@ -94,7 +109,7 @@ function getSettingsSheet_() {
     sheet.getRange(1, 1, 3, 3).setValues([
       ['setting', 'value', 'note'],
       ['APP_PASSWORD', '', 'Type your login password in column B. Changing it logs everyone out.'],
-      ['', '', 'Anyone who can open this Sheet can see the password. Only share the Sheet with people you trust.'],
+      ['API_KEY', '', 'Optional: key for the AI/MCP server (24+ characters). Empty = AI access off.'],
     ]);
     sheet.getRange('B:B').setNumberFormat('@'); // keep passwords like 001234 as typed
     sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
@@ -103,16 +118,26 @@ function getSettingsSheet_() {
   return sheet;
 }
 
-// Password from the Settings tab first, then the Script Property as a backup.
-function getPassword_() {
+function getSetting_(key) {
   const values = getSettingsSheet_().getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]).trim() === 'APP_PASSWORD') {
-      const v = String(values[i][1] == null ? '' : values[i][1]).trim();
-      if (v) return v;
+    if (String(values[i][0]).trim() === key) {
+      return String(values[i][1] == null ? '' : values[i][1]).trim();
     }
   }
-  return PropertiesService.getScriptProperties().getProperty('APP_PASSWORD') || '';
+  return '';
+}
+
+// Password from the Settings tab first, then the Script Property as a backup.
+function getPassword_() {
+  return getSetting_('APP_PASSWORD') || PropertiesService.getScriptProperties().getProperty('APP_PASSWORD') || '';
+}
+
+// Server-to-server key for the MCP server. Must be long; empty = AI access off.
+function checkApiKey_(key) {
+  const real = getSetting_('API_KEY');
+  if (!real || real.length < 24 || typeof key !== 'string' || key.length > 200) return false;
+  return safeEqual_(key, real);
 }
 
 /* ---------- Login ---------- */
@@ -205,12 +230,28 @@ function updateContact_(sheet, input) {
   return updated;
 }
 
-function deleteContact_(sheet, id) {
+// "Delete" = move the row to the Deleted tab, so it can be restored by hand.
+function deleteContact_(sheet, id, actor) {
   if (!id) throw new Error('Missing contact id.');
   const found = findRow_(sheet, id);
   if (!found) return { id: id }; // already gone — treat as success
+  const contact = rowToContact_(found.row, found.cols);
+  const bin = getDeletedSheet_();
+  bin.appendRow(HEADERS.map(h => toCell_(contact[h])).concat([toCell_(new Date().toISOString()), toCell_(actor || 'web')]));
   sheet.deleteRow(found.rowNumber);
-  return { id: id };
+  return contact;
+}
+
+function getDeletedSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(DELETED_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(DELETED_SHEET);
+    const head = HEADERS.concat(['deleted_at', 'deleted_by']);
+    sheet.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
 }
 
 /* ---------- Helpers ---------- */

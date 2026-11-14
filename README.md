@@ -6,7 +6,7 @@ A simple, mobile-friendly CRM. Google-style look, Google Sheet as the database, 
 |---|---|---|
 | <img src="docs/login.png" width="200"> | <img src="docs/mobile.png" width="200"> | <img src="docs/desktop.png" width="420"> |
 
-**What it does:** password login · add, view, edit and delete contacts · search · filter by status (Lead / Prospect / Customer / Lost) · tap to call or email · undo delete · dark mode.
+**What it does:** AI assistant access (MCP) · password login · add, view, edit and delete contacts · search · filter by status (Lead / Prospect / Customer / Lost) · tap to call or email · undo delete · dark mode.
 
 ---
 
@@ -66,6 +66,53 @@ cd public && python3 -m http.server 8080
 
 ---
 
+## 🤖 Talk to your CRM with AI (MCP)
+
+The site also hosts an **MCP server** at `/mcp`. Connect it to Claude and just ask:
+
+> "Add Siti from Kedai Bunga, 012-888 1234, came from TikTok" · "Which Leads haven't I followed up in 2 weeks?" · "Move Tan Wei Ming to Customer, note he paid RM500 deposit" · "Delete Ravi Kumar"
+
+```
+Claude ──(your MCP key)──► /mcp on Netlify ──(API_KEY)──► Apps Script ──► Google Sheet
+```
+
+| Tool | What it does | Safety |
+|---|---|---|
+| `search_contacts` | Find by text, phone, status, source, "not updated in X days" | Read only |
+| `get_contact` | Full details of one contact | Read only |
+| `add_contact` | Add a lead | Stops and asks if it looks like a duplicate (same phone, email, or name + company) |
+| `update_contact` | Change fields, or add a dated note | Only changes what you ask; edit-clash check |
+| `delete_contact` | Delete a contact | Must show you the contact and get your "yes"; exact name required; **moved to the Deleted tab**, not wiped |
+| `pipeline_summary` | Totals by status/source, new this week, who needs follow-up | Read only |
+
+### Setup (about 10 minutes)
+1. **Sheet → Settings tab:** put a long random key next to `API_KEY` (24+ characters).
+2. **Netlify → Project configuration → Environment variables → Add** (tick *Contains secret values*):
+
+   | Key | Value |
+   |---|---|
+   | `APPS_SCRIPT_URL` | your Web App URL ending in `/exec` |
+   | `APPS_SCRIPT_API_KEY` | the same value as `API_KEY` in the Settings tab |
+   | `MCP_API_KEYS` | who may connect, as `name:key` pairs, e.g. `owner:mcp_xxxxxxxx` (24+ char keys, comma between people) |
+
+3. **Redeploy** the site (Deploys → Trigger deploy) so the function picks up the variables.
+4. **Connect Claude:**
+   - **claude.ai / Claude Desktop:** Settings → Connectors → *Add custom connector* → URL `https://<your-site>.netlify.app/mcp?key=<your MCP key>`
+   - **Claude Code:** `claude mcp add --transport http mini-crm https://<your-site>.netlify.app/mcp --header "Authorization: Bearer <your MCP key>"`
+
+### Switching AI access off
+- **One person:** remove their `name:key` from `MCP_API_KEYS` and redeploy.
+- **Everyone, instantly:** clear the `API_KEY` cell in the Settings tab.
+
+Changing the website password does **not** affect AI access (they use different keys). Every AI change is logged: deletes record `ai:<name>` in the Deleted tab's `deleted_by` column, and Netlify's function log shows each tool call.
+
+### Run the tests
+```bash
+npm install && npm test   # 13 end-to-end tests: real MCP client → server → Apps Script code
+```
+
+---
+
 ## ⚠️ Good to know
 
 | Topic | What to know |
@@ -86,5 +133,8 @@ public/index.html     → page layout
 public/styles.css     → Google-style (Material 3) design, mobile-first
 public/app.js         → app logic + demo mode
 public/config.js      → your Apps Script URL
+netlify/functions/mcp.mjs → MCP server (AI access)
+netlify/lib/          → MCP tools + Apps Script client
+tests/                → end-to-end tests (npm test)
 netlify.toml          → Netlify settings
 ```
