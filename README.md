@@ -6,7 +6,7 @@ A simple, mobile-friendly CRM. Google-style look, Google Sheet as the database, 
 |---|---|---|
 | <img src="docs/login.png" width="200"> | <img src="docs/mobile.png" width="200"> | <img src="docs/desktop.png" width="420"> |
 
-**What it does:** AI assistant access (MCP) · password login · add, view, edit and delete contacts · search · filter by status (Lead / Prospect / Customer / Lost) · tap to call or email · undo delete · dark mode.
+**What it does:** AI assistant access (MCP) · password login · add, view, edit and delete contacts · search · filter by status (Lead / Prospect / Customer / Lost) · one-tap WhatsApp (Malaysian numbers auto-converted to +60) · tap to call or email · undo delete · dark mode.
 
 ---
 

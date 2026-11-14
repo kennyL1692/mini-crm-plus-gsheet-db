@@ -23,6 +23,27 @@
   const colorFor = (s) => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; };
   const telHref = (p) => 'tel:' + String(p).replace(/[^\d+]/g, '');
 
+  // WhatsApp needs the number with country code and no "+", e.g. 60123456789.
+  // Malaysian numbers: 012-345 6789 -> 60123456789, 03-7781 2234 -> 60377812234.
+  // Numbers typed with "+" (e.g. +65 9123 4567) keep their own country code.
+  function waNumber(phone) {
+    const raw = String(phone || '').trim();
+    let d = raw.replace(/\D/g, '');
+    if (!raw.startsWith('+')) {
+      if (d.startsWith('00')) d = d.slice(2);               // 0065... international format
+      else if (d.startsWith('0')) d = '6' + d;              // local Malaysian number
+      else if (!d.startsWith('60') && /^1\d{8,9}$/.test(d)) d = '60' + d; // mobile typed without the 0
+    }
+    return d.length >= 9 && d.length <= 15 ? d : '';
+  }
+  function waHref(phone, name) {
+    const n = waNumber(phone);
+    if (!n) return '';
+    const first = String(name || '').trim().split(/\s+/)[0] || '';
+    return `https://wa.me/${n}?text=${encodeURIComponent(first ? `Hi ${first}, ` : 'Hi, ')}`;
+  }
+  const WA_ICON = '<svg class="wa-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01zm-7.01 15.24c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.26 8.26 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c.02 4.54-3.68 8.23-8.22 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43s.17-.25.25-.41c.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18s-.22-.16-.47-.28z"/></svg>';
+
   /* ---------- Session (login pass) ---------- */
   const session = {
     get() {
@@ -182,7 +203,13 @@
       return;
     }
 
+    const waBtn = (c, cls) => {
+      const href = waHref(c.phone, c.name);
+      return href ? `<a class="${cls} wa" href="${esc(href)}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp ${esc(c.name)}" title="WhatsApp" data-stop>${WA_ICON}</a>` : '';
+    };
+
     const actions = (c) => `
+      ${waBtn(c, 'icon-btn')}
       ${c.phone ? `<a class="icon-btn" href="${esc(telHref(c.phone))}" aria-label="Call ${esc(c.name)}" data-stop><span class="material-symbols-rounded">call</span></a>` : ''}
       ${c.email ? `<a class="icon-btn" href="mailto:${esc(c.email)}" aria-label="Email ${esc(c.name)}" data-stop><span class="material-symbols-rounded">mail</span></a>` : ''}`;
 
@@ -204,7 +231,7 @@
       <tr class="${c._saving ? 'saving' : ''}" data-id="${esc(c.id)}" tabindex="0">
         <td><div class="name-cell"><div class="avatar" style="--av:${colorFor(c.name)}">${esc(initials(c.name))}</div><span>${esc(c.name)}</span></div></td>
         <td class="muted">${esc(c.company)}</td>
-        <td>${c.phone ? `<a href="${esc(telHref(c.phone))}" data-stop>${esc(c.phone)}</a>` : ''}</td>
+        <td>${c.phone ? `<div class="phone-cell"><a href="${esc(telHref(c.phone))}" data-stop>${esc(c.phone)}</a>${waBtn(c, 'icon-btn small')}</div>` : ''}</td>
         <td>${c.email ? `<a href="mailto:${esc(c.email)}" data-stop>${esc(c.email)}</a>` : ''}</td>
         <td><span class="status status-${esc(c.status)}">${esc(c.status)}</span></td>
         <td class="muted">${esc(c.source)}</td>
@@ -213,7 +240,7 @@
     $('#list').innerHTML = `
       <ul class="cards">${cards}</ul>
       <div class="table-wrap"><table>
-        <colgroup><col style="width:24%"><col style="width:20%"><col style="width:15%"><col style="width:22%"><col style="width:10%"><col style="width:9%"></colgroup>
+        <colgroup><col style="width:24%"><col style="width:20%"><col style="width:18%"><col style="width:19%"><col style="width:10%"><col style="width:9%"></colgroup>
         <thead><tr><th>Name</th><th>Company</th><th>Phone</th><th>Email</th><th>Status</th><th>Source</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table></div>`;
