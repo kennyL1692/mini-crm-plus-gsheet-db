@@ -5,6 +5,14 @@
   const DEMO = !API_URL;
   const STATUSES = ['Lead', 'Prospect', 'Customer', 'Lost'];
   const STATUS_COLORS = { Lead: '#1a73e8', Prospect: '#f9ab00', Customer: '#1e8e3e', Lost: '#d93025' };
+  // Lead = new person, Prospect = talking/quoting, Customer = won, Lost = didn't work out
+  const STATUS_ICONS = { Lead: 'person_add', Prospect: 'forum', Customer: 'check_circle', Lost: 'cancel' };
+  // "lead", " LEAD " typed by hand in the Sheet still count as "Lead".
+  const fixStatus = (c) => {
+    const m = STATUSES.find((s) => s.toLowerCase() === String(c.status || '').trim().toLowerCase());
+    return m && m !== c.status ? Object.assign({}, c, { status: m }) : c;
+  };
+  const statusIcon = (s, cls = '') => (STATUS_ICONS[s] ? `<span class="material-symbols-rounded ${cls}" aria-hidden="true">${STATUS_ICONS[s]}</span>` : '');
   const AVATAR_COLORS = ['#1a73e8', '#d93025', '#f9ab00', '#1e8e3e', '#9334e6', '#e8710a', '#12b5cb', '#e52592'];
   const CACHE_KEY = 'minicrm.cache.v1.' + (DEMO ? 'demo' : API_URL);
   const DEMO_KEY = 'minicrm.demo.v1';
@@ -169,15 +177,15 @@
     STATUSES.forEach((s) => { counts[s] = all.filter((c) => c.status === s).length; });
 
     $('#stats').innerHTML = STATUSES.map((s) => `
-      <div class="stat" style="--c:${STATUS_COLORS[s]}">
-        <div class="stat-label">${s}</div>
+      <div class="stat stat-${s}" style="--c:${STATUS_COLORS[s]}">
+        <div class="stat-head"><span class="stat-label">${s}</span>${statusIcon(s, 'stat-icon')}</div>
         <div class="stat-value">${counts[s]}</div>
       </div>`).join('');
 
     $('#chips').innerHTML = ['All', ...STATUSES].map((s) => {
       const on = state.filter === s;
       return `<button class="chip" role="tab" type="button" data-filter="${s}" aria-selected="${on}">
-        ${on ? '<span class="material-symbols-rounded">check</span>' : ''}${s} <span class="chip-count">${counts[s]}</span>
+        ${s === 'All' ? (on ? '<span class="material-symbols-rounded" aria-hidden="true">check</span>' : '') : statusIcon(s, `chip-icon chip-icon-${s}`)}${s} <span class="chip-count">${counts[s]}</span>
       </button>`;
     }).join('');
 
@@ -220,7 +228,7 @@
           <div class="card-name">${esc(c.name)}</div>
           <div class="card-sub">${esc(c.company || c.email || c.phone || '—')}</div>
           <div class="card-meta">
-            <span class="status status-${esc(c.status)}">${esc(c.status)}</span>
+            <span class="status status-${esc(c.status)}">${statusIcon(c.status)}${esc(c.status)}</span>
             ${c.source ? `<span class="source">via ${esc(c.source)}</span>` : ''}
           </div>
         </div>
@@ -233,14 +241,14 @@
         <td class="muted">${esc(c.company)}</td>
         <td>${c.phone ? `<div class="phone-cell"><a href="${esc(telHref(c.phone))}" data-stop>${esc(c.phone)}</a>${waBtn(c, 'icon-btn small')}</div>` : ''}</td>
         <td>${c.email ? `<a href="mailto:${esc(c.email)}" data-stop>${esc(c.email)}</a>` : ''}</td>
-        <td><span class="status status-${esc(c.status)}">${esc(c.status)}</span></td>
+        <td><span class="status status-${esc(c.status)}">${statusIcon(c.status)}${esc(c.status)}</span></td>
         <td class="muted">${esc(c.source)}</td>
       </tr>`).join('');
 
     $('#list').innerHTML = `
       <ul class="cards">${cards}</ul>
       <div class="table-wrap"><table>
-        <colgroup><col style="width:24%"><col style="width:20%"><col style="width:18%"><col style="width:19%"><col style="width:10%"><col style="width:9%"></colgroup>
+        <colgroup><col style="width:22%"><col style="width:18%"><col style="width:18%"><col style="width:19%"><col style="width:14%"><col style="width:9%"></colgroup>
         <thead><tr><th>Name</th><th>Company</th><th>Phone</th><th>Email</th><th>Status</th><th>Source</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table></div>`;
@@ -279,7 +287,7 @@
     try {
       const list = await api.list();
       if (epoch !== state.epoch) return; // logged out meanwhile
-      state.contacts = list;
+      state.contacts = list.map(fixStatus);
       state.loaded = true;
       saveCache();
       render();

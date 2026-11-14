@@ -181,7 +181,17 @@ body.logged-out .app-only { display: none !important; }
   padding: 14px 16px;
   border-top: 4px solid var(--c);
 }
+.stat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .stat-label { color: var(--muted); font-size: 13px; }
+.stat-icon {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; flex: none;
+  font-size: 18px; font-variation-settings: "FILL" 1;
+}
+.stat-Lead .stat-icon     { background: var(--lead-bg);     color: var(--lead-fg); }
+.stat-Prospect .stat-icon { background: var(--prospect-bg); color: var(--prospect-fg); }
+.stat-Customer .stat-icon { background: var(--customer-bg); color: var(--customer-fg); }
+.stat-Lost .stat-icon     { background: var(--lost-bg);     color: var(--lost-fg); }
 .stat-value { font-size: 28px; font-weight: 400; margin-top: 2px; }
 
 /* Search */
@@ -222,6 +232,14 @@ body.logged-out .app-only { display: none !important; }
   border-color: transparent; padding-left: 10px;
 }
 .chip .material-symbols-rounded { font-size: 18px; }
+.chip { padding-left: 10px; }
+.chip[data-filter="All"]:not([aria-selected="true"]) { padding-left: 16px; }
+.chip-icon { font-variation-settings: "FILL" 1; }
+.chip-icon-Lead { color: var(--lead-fg); }
+.chip-icon-Prospect { color: var(--prospect-fg); }
+.chip-icon-Customer { color: var(--customer-fg); }
+.chip-icon-Lost { color: var(--lost-fg); }
+.chip[aria-selected="true"] .chip-icon { color: inherit; }
 .chip-count { opacity: .75; font-weight: 400; }
 
 /* ---------- Contact list (cards on mobile) ---------- */
@@ -280,9 +298,11 @@ body.logged-out .app-only { display: none !important; }
 
 .status {
   display: inline-flex; align-items: center;
-  height: 24px; padding: 0 10px;
+  height: 24px; padding: 0 10px 0 6px; gap: 4px;
   border-radius: 12px; font-size: 12px; font-weight: 500;
+  white-space: nowrap;
 }
+.status .material-symbols-rounded { font-size: 16px; font-variation-settings: "FILL" 1; }
 .status-Lead     { background: var(--lead-bg);     color: var(--lead-fg); }
 .status-Prospect { background: var(--prospect-bg); color: var(--prospect-fg); }
 .status-Customer { background: var(--customer-bg); color: var(--customer-fg); }
@@ -481,3 +501,4 @@ dialog[open] { animation: rise .2s ease-out; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.status:not(:has(.material-symbols-rounded)) { padding-left: 10px; }
