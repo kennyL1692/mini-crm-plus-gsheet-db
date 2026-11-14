@@ -91,18 +91,27 @@ function login_(password) {
   }
 
   const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-  cache.put('sess_' + token, '1', SESSION_SECONDS);
+  cache.put('sess_' + token, fingerprint_(real), SESSION_SECONDS);
   return { token: token, expires_in: SESSION_SECONDS };
 }
 
 // Valid session? Each use extends it by another 6 hours.
+// Sessions are tied to the current password, so changing APP_PASSWORD logs everyone out at once.
 function checkSession_(token) {
   if (!token || typeof token !== 'string' || token.length > 100) return false;
+  const real = PropertiesService.getScriptProperties().getProperty('APP_PASSWORD');
+  if (!real) return false;
   const cache = CacheService.getScriptCache();
   const key = 'sess_' + token;
-  if (!cache.get(key)) return false;
-  cache.put(key, '1', SESSION_SECONDS);
+  const fp = fingerprint_(real);
+  if (cache.get(key) !== fp) return false;
+  cache.put(key, fp, SESSION_SECONDS);
   return true;
+}
+
+function fingerprint_(password) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'minicrm:' + password, Utilities.Charset.UTF_8);
+  return bytes.slice(0, 12).map(b => ((b + 256) % 256).toString(16).padStart(2, '0')).join('');
 }
 
 // Compare passwords without leaking timing info.

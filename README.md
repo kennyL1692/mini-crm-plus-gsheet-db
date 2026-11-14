@@ -65,7 +65,7 @@ cd public && python3 -m http.server 8080
 | Topic | What to know |
 |---|---|
 | **Changing Code.gs later** | Use **Deploy → Manage deployments → ✏️ Edit → Version: New version**. If you make a *new* deployment, the URL changes and the app stops working. |
-| **One shared password** | Everyone uses the same password. If someone leaves, change `APP_PASSWORD`; their pass stops working within 6 hours. |
+| **One shared password** | Everyone uses the same password. If someone leaves, change `APP_PASSWORD`. Everyone is logged out right away, and only people with the new password can get back in. |
 | **Wrong-password lock** | After 10 wrong tries in 10 minutes, login is paused for 10 minutes for everyone. |
 | **Log out** | The ⏻ button at the top right. It also clears the saved contact list from that device. |
 | **Speed** | Apps Script takes 1–3 seconds. The screen updates right away and saves in the background. |
