@@ -132,6 +132,9 @@
     pendingDeletes: new Map(), // id -> timeout
     editing: null,
     busy: 0,
+    loaded: false, // true after the first successful load
+    loading: false,
+    epoch: 0,      // goes up on every log out, so late server replies are ignored
   };
 
   /* ---------- Rendering ---------- */
@@ -162,6 +165,12 @@
       .filter((c) => state.filter === 'All' || c.status === state.filter)
       .filter((c) => !q || [c.name, c.company, c.phone, c.email, c.notes].some((v) => String(v || '').toLowerCase().includes(q)))
       .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+
+    if (!rows.length && !state.loaded && state.loading) {
+      $('#list').innerHTML = `<ul class="cards skeleton" aria-label="Loading contacts">${'<li class="card"><div class="avatar"></div><div class="card-main"><div class="sk sk-1"></div><div class="sk sk-2"></div></div></li>'.repeat(4)}</ul>
+        <p class="loading-text">Loading contacts…</p>`;
+      return;
+    }
 
     if (!rows.length) {
       const none = all.length === 0;
@@ -236,16 +245,27 @@
 
   /* ---------- Data actions ---------- */
   async function load() {
+    const epoch = state.epoch;
     setBusy(1);
+    state.loading = true;
+    render();
     try {
-      state.contacts = await api.list();
+      const list = await api.list();
+      if (epoch !== state.epoch) return; // logged out meanwhile
+      state.contacts = list;
+      state.loaded = true;
       saveCache();
       render();
     } catch (err) {
+      if (epoch !== state.epoch) return;
       if (err instanceof AuthError) return expired();
       toast(err.message, 'Retry', load);
     } finally {
       setBusy(-1);
+      if (epoch === state.epoch) {
+        state.loading = false;
+        render();
+      }
     }
   }
 
@@ -264,17 +284,20 @@
     closeDialog();
     render();
     setBusy(1);
+    const epoch = state.epoch;
 
     try {
       const saved = existing
         ? await api.update(Object.assign({}, data, { id: existing.id, updated_at: existing.updated_at }))
         : await api.create(data);
+      if (epoch !== state.epoch) return;
       const targetId = existing ? existing.id : tempId;
       state.contacts = state.contacts.map((c) => (c.id === targetId ? saved : c));
       saveCache();
       render();
       toast(existing ? 'Contact updated' : 'Contact added');
     } catch (err) {
+      if (epoch !== state.epoch) return;
       state.contacts = snapshot;
       render();
       if (err instanceof AuthError) return expired();
@@ -297,12 +320,15 @@
   }
 
   async function commitDelete(id) {
+    const epoch = state.epoch;
     setBusy(1);
     try {
       await api.remove(id);
+      if (epoch !== state.epoch) return;
       state.contacts = state.contacts.filter((c) => c.id !== id);
       saveCache();
     } catch (err) {
+      if (epoch !== state.epoch) return;
       if (err instanceof AuthError) expired();
       else toast(err.message);
     } finally {
@@ -409,7 +435,11 @@
     if (c && !c._saving) openDialog(c);
   };
   $('#list').addEventListener('click', openFromList);
-  $('#list').addEventListener('keydown', (e) => { if (e.key === 'Enter') openFromList(e); });
+  $('#list').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.target.closest('a')) return;
+    e.preventDefault(); // stop this Enter from also "clicking" a button inside the form
+    openFromList(e);
+  });
 
   /* ---------- Login / logout ---------- */
   function showLogin(message) {
@@ -432,9 +462,12 @@
   }
 
   function clearLocalData() {
+    state.epoch += 1;
+    state.loading = false;
     session.clear();
     try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
     state.contacts = [];
+    state.loaded = false;
     state.pendingDeletes.forEach((t) => clearTimeout(t));
     state.pendingDeletes.clear();
     closeDialog();

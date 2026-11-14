@@ -225,7 +225,7 @@ body.logged-out .app-only { display: none !important; }
 .chip-count { opacity: .75; font-weight: 400; }
 
 /* ---------- Contact list (cards on mobile) ---------- */
-.cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .card {
   display: flex; align-items: center; gap: 14px;
   padding: 12px 8px 12px 16px;
@@ -238,6 +238,17 @@ body.logged-out .app-only { display: none !important; }
 .card:hover { box-shadow: var(--shadow-1); }
 .card.saving, tr.saving { opacity: .55; pointer-events: none; }
 .card-main { flex: 1; min-width: 0; }
+.card { min-width: 0; }
+
+/* Loading placeholder */
+.skeleton .card { cursor: default; pointer-events: none; }
+.skeleton .avatar, .sk { background: var(--surface-2); animation: pulse 1.2s ease-in-out infinite; }
+.sk { height: 12px; border-radius: 6px; }
+.sk-1 { width: 55%; margin-bottom: 10px; height: 14px; }
+.sk-2 { width: 35%; }
+@keyframes pulse { 50% { opacity: .5; } }
+.loading-text { text-align: center; color: var(--muted); margin: 16px 0; }
+@media (min-width: 900px) { .skeleton { display: grid !important; } }
 .card-name { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-sub { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
