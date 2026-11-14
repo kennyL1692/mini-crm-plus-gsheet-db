@@ -9,10 +9,14 @@
  *      Who has access: Anyone
  * 4. Copy the Web App URL into public/config.js (API_URL).
  * 5. Set the login password:
- *      Project Settings (gear icon) → Script properties → Add script property
- *      Property: APP_PASSWORD    Value: your password
+ *      Select the "setup" function at the top and click Run once.
+ *      A "Settings" tab appears in your Sheet. Type your password in the
+ *      cell next to APP_PASSWORD.
  *
- * To change the password later, just edit APP_PASSWORD (no redeploy needed).
+ * To change the password later, just edit that cell (no redeploy needed).
+ * Changing it logs everyone out straight away.
+ * (Optional: if the Settings cell is empty, the APP_PASSWORD Script Property
+ *  under Project Settings is used instead.)
  *
  * When you change this code later, use
  * Deploy → Manage deployments → Edit (pencil) → Version: New version
@@ -20,6 +24,7 @@
  */
 
 const SHEET_NAME = 'Contacts';
+const SETTINGS_SHEET = 'Settings';
 const HEADERS = ['id', 'name', 'company', 'phone', 'email', 'status', 'source', 'notes', 'created_at', 'updated_at'];
 const EDITABLE = ['name', 'company', 'phone', 'email', 'status', 'source', 'notes'];
 const STATUSES = ['Lead', 'Prospect', 'Customer', 'Lost'];
@@ -73,12 +78,49 @@ function handle_(body) {
   }
 }
 
+/* ---------- Setup + password ---------- */
+
+// Run this once from the Apps Script editor to create the tabs.
+function setup() {
+  getSheet_();
+  getSettingsSheet_();
+}
+
+function getSettingsSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SETTINGS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(SETTINGS_SHEET);
+    sheet.getRange(1, 1, 3, 3).setValues([
+      ['setting', 'value', 'note'],
+      ['APP_PASSWORD', '', 'Type your login password in column B. Changing it logs everyone out.'],
+      ['', '', 'Anyone who can open this Sheet can see the password. Only share the Sheet with people you trust.'],
+    ]);
+    sheet.getRange('B:B').setNumberFormat('@'); // keep passwords like 001234 as typed
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+// Password from the Settings tab first, then the Script Property as a backup.
+function getPassword_() {
+  const values = getSettingsSheet_().getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim() === 'APP_PASSWORD') {
+      const v = String(values[i][1] == null ? '' : values[i][1]).trim();
+      if (v) return v;
+    }
+  }
+  return PropertiesService.getScriptProperties().getProperty('APP_PASSWORD') || '';
+}
+
 /* ---------- Login ---------- */
 
 function login_(password) {
-  const real = PropertiesService.getScriptProperties().getProperty('APP_PASSWORD');
+  const real = getPassword_();
   if (!real) {
-    throw new Error('Password not set up yet. In Apps Script go to Project Settings → Script properties and add APP_PASSWORD.');
+    throw new Error('Password not set up yet. Open the Settings tab in your Google Sheet and type a password next to APP_PASSWORD.');
   }
   const cache = CacheService.getScriptCache();
   const fails = Number(cache.get('login_fails') || 0);
@@ -99,7 +141,7 @@ function login_(password) {
 // Sessions are tied to the current password, so changing APP_PASSWORD logs everyone out at once.
 function checkSession_(token) {
   if (!token || typeof token !== 'string' || token.length > 100) return false;
-  const real = PropertiesService.getScriptProperties().getProperty('APP_PASSWORD');
+  const real = getPassword_();
   if (!real) return false;
   const cache = CacheService.getScriptCache();
   const key = 'sess_' + token;
