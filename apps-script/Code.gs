@@ -8,6 +8,11 @@
  *      Execute as: Me
  *      Who has access: Anyone
  * 4. Copy the Web App URL into public/config.js (API_URL).
+ * 5. Set the login password:
+ *      Project Settings (gear icon) → Script properties → Add script property
+ *      Property: APP_PASSWORD    Value: your password
+ *
+ * To change the password later, just edit APP_PASSWORD (no redeploy needed).
  *
  * When you change this code later, use
  * Deploy → Manage deployments → Edit (pencil) → Version: New version
@@ -19,11 +24,14 @@ const HEADERS = ['id', 'name', 'company', 'phone', 'email', 'status', 'source', 
 const EDITABLE = ['name', 'company', 'phone', 'email', 'status', 'source', 'notes'];
 const STATUSES = ['Lead', 'Prospect', 'Customer', 'Lost'];
 const MAX_LEN = { notes: 2000, default: 200 };
+const SESSION_SECONDS = 6 * 60 * 60; // 6 hours (the most CacheService allows)
+const MAX_FAILS = 10;                 // wrong tries allowed...
+const FAIL_WINDOW_SECONDS = 10 * 60;  // ...within 10 minutes
 
 /* ---------- Entry points ---------- */
 
 function doGet() {
-  return handle_({ action: 'list' });
+  return json_({ ok: true, data: { service: 'Mini CRM API', status: 'running' } });
 }
 
 function doPost(e) {
@@ -38,6 +46,15 @@ function doPost(e) {
 
 function handle_(body) {
   try {
+    if (body.action === 'login') return json_({ ok: true, data: login_(body.password) });
+    if (body.action === 'logout') {
+      if (body.token) CacheService.getScriptCache().remove('sess_' + body.token);
+      return json_({ ok: true, data: {} });
+    }
+    if (!checkSession_(body.token)) {
+      return json_({ ok: false, code: 'AUTH', error: 'Please log in again.' });
+    }
+
     const sheet = getSheet_();
     switch (body.action) {
       case 'list':
@@ -54,6 +71,47 @@ function handle_(body) {
   } catch (err) {
     return json_({ ok: false, error: String((err && err.message) || err) });
   }
+}
+
+/* ---------- Login ---------- */
+
+function login_(password) {
+  const real = PropertiesService.getScriptProperties().getProperty('APP_PASSWORD');
+  if (!real) {
+    throw new Error('Password not set up yet. In Apps Script go to Project Settings → Script properties and add APP_PASSWORD.');
+  }
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('login_fails') || 0);
+  if (fails >= MAX_FAILS) throw new Error('Too many wrong tries. Please wait 10 minutes.');
+
+  if (!safeEqual_(String(password == null ? '' : password), real)) {
+    cache.put('login_fails', String(fails + 1), FAIL_WINDOW_SECONDS);
+    Utilities.sleep(800); // slow down guessing
+    throw new Error('Wrong password.');
+  }
+
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  cache.put('sess_' + token, '1', SESSION_SECONDS);
+  return { token: token, expires_in: SESSION_SECONDS };
+}
+
+// Valid session? Each use extends it by another 6 hours.
+function checkSession_(token) {
+  if (!token || typeof token !== 'string' || token.length > 100) return false;
+  const cache = CacheService.getScriptCache();
+  const key = 'sess_' + token;
+  if (!cache.get(key)) return false;
+  cache.put(key, '1', SESSION_SECONDS);
+  return true;
+}
+
+// Compare passwords without leaking timing info.
+function safeEqual_(a, b) {
+  const ha = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, a, Utilities.Charset.UTF_8);
+  const hb = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, b, Utilities.Charset.UTF_8);
+  let diff = 0;
+  for (let i = 0; i < ha.length; i++) diff |= ha[i] ^ hb[i];
+  return diff === 0;
 }
 
 /* ---------- CRUD ---------- */

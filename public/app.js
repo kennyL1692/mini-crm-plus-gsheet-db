@@ -9,6 +9,8 @@
   const CACHE_KEY = 'minicrm.cache.v1.' + (DEMO ? 'demo' : API_URL);
   const DEMO_KEY = 'minicrm.demo.v1';
   const UNDO_MS = 5000;
+  const SESSION_KEY = 'minicrm.session.v1.' + (DEMO ? 'demo' : API_URL);
+  const SESSION_MS = 6 * 60 * 60 * 1000;
 
   /* ---------- Small helpers ---------- */
   const $ = (sel) => document.querySelector(sel);
@@ -21,6 +23,20 @@
   const colorFor = (s) => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; };
   const telHref = (p) => 'tel:' + String(p).replace(/[^\d+]/g, '');
 
+  /* ---------- Session (login pass) ---------- */
+  const session = {
+    get() {
+      const s = store.get(SESSION_KEY);
+      return s && s.token && s.exp > Date.now() ? s : null;
+    },
+    token() { const s = this.get(); return s ? s.token : ''; },
+    save(token) { store.set(SESSION_KEY, { token, exp: Date.now() + SESSION_MS }); },
+    touch() { const s = this.get(); if (s) this.save(s.token); }, // server extends it on each use too
+    clear() { try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ } },
+  };
+
+  class AuthError extends Error {}
+
   /* ---------- API: Apps Script or local demo ---------- */
   const remoteApi = {
     async call(action, payload) {
@@ -30,16 +46,22 @@
         res = await fetch(API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(Object.assign({ action }, payload)),
+          body: JSON.stringify(Object.assign({ action, token: session.token() }, payload)),
         });
       } catch {
         throw new Error('Cannot reach the server. Check your internet.');
       }
       let json;
       try { json = await res.json(); } catch { throw new Error('Server sent a bad reply. Check the Apps Script deployment.'); }
-      if (!json.ok) throw new Error(json.error || 'Something went wrong.');
+      if (!json.ok) {
+        if (json.code === 'AUTH') throw new AuthError(json.error || 'Please log in again.');
+        throw new Error(json.error || 'Something went wrong.');
+      }
+      if (action !== 'login' && action !== 'logout') session.touch();
       return json.data;
     },
+    async login(password) { return this.call('login', { password }); },
+    logout() { return this.call('logout').catch(() => {}); },
     list() { return this.call('list'); },
     create(contact) { return this.call('create', { contact }); },
     update(contact) { return this.call('update', { contact }); },
@@ -53,6 +75,12 @@
       if (!Array.isArray(data)) { data = seedData(); store.set(DEMO_KEY, data); }
       return data;
     },
+    async login(password) {
+      await this.wait();
+      if (password !== 'demo') throw new Error('Wrong password.');
+      return { token: 'demo-token' };
+    },
+    async logout() {},
     async list() { await this.wait(); return this.read(); },
     async create(c) {
       await this.wait();
@@ -98,7 +126,7 @@
 
   /* ---------- State ---------- */
   const state = {
-    contacts: store.get(CACHE_KEY) || [],
+    contacts: [],
     filter: 'All',
     query: '',
     pendingDeletes: new Map(), // id -> timeout
@@ -214,6 +242,7 @@
       saveCache();
       render();
     } catch (err) {
+      if (err instanceof AuthError) return expired();
       toast(err.message, 'Retry', load);
     } finally {
       setBusy(-1);
@@ -248,6 +277,7 @@
     } catch (err) {
       state.contacts = snapshot;
       render();
+      if (err instanceof AuthError) return expired();
       toast(err.message);
     } finally {
       setBusy(-1);
@@ -273,7 +303,8 @@
       state.contacts = state.contacts.filter((c) => c.id !== id);
       saveCache();
     } catch (err) {
-      toast(err.message);
+      if (err instanceof AuthError) expired();
+      else toast(err.message);
     } finally {
       state.pendingDeletes.delete(id);
       setBusy(-1);
@@ -288,7 +319,7 @@
       if (DEMO) {
         store.set(DEMO_KEY, localApi.read().filter((x) => x.id !== id));
       } else if (navigator.sendBeacon) {
-        navigator.sendBeacon(API_URL, new Blob([JSON.stringify({ action: 'delete', id })], { type: 'text/plain;charset=utf-8' }));
+        navigator.sendBeacon(API_URL, new Blob([JSON.stringify({ action: 'delete', id, token: session.token() })], { type: 'text/plain;charset=utf-8' }));
       }
     });
   });
@@ -380,8 +411,86 @@
   $('#list').addEventListener('click', openFromList);
   $('#list').addEventListener('keydown', (e) => { if (e.key === 'Enter') openFromList(e); });
 
+  /* ---------- Login / logout ---------- */
+  function showLogin(message) {
+    document.body.classList.add('logged-out');
+    $('#login-view').hidden = false;
+    $('#demo-hint').hidden = !DEMO;
+    const err = $('#login-error');
+    err.hidden = !message;
+    err.textContent = message || '';
+    $('#password').value = '';
+    setTimeout(() => $('#password').focus(), 50);
+  }
+
+  function showApp() {
+    document.body.classList.remove('logged-out');
+    $('#login-view').hidden = true;
+    state.contacts = store.get(CACHE_KEY) || [];
+    render();
+    load();
+  }
+
+  function clearLocalData() {
+    session.clear();
+    try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
+    state.contacts = [];
+    state.pendingDeletes.forEach((t) => clearTimeout(t));
+    state.pendingDeletes.clear();
+    closeDialog();
+    hideToast();
+  }
+
+  function expired() {
+    clearLocalData();
+    showLogin('Your session ended. Please sign in again.');
+  }
+
+  $('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = $('#password').value;
+    const err = $('#login-error');
+    const btn = $('#login-btn');
+    if (!pw) { err.textContent = 'Please enter the password.'; err.hidden = false; return; }
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    err.hidden = true;
+    try {
+      const res = await api.login(pw);
+      session.save(res.token);
+      showApp();
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.hidden = false;
+      $('#password').select();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+    }
+  });
+
+  $('#toggle-pw').addEventListener('click', () => {
+    const input = $('#password');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    $('#toggle-pw').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    $('#toggle-pw .material-symbols-rounded').textContent = show ? 'visibility_off' : 'visibility';
+    input.focus();
+  });
+
+  $('#logout-btn').addEventListener('click', async () => {
+    // Finish any waiting deletes first so they are not lost.
+    const waiting = [];
+    state.pendingDeletes.forEach((timer, id) => { clearTimeout(timer); waiting.push(commitDelete(id)); });
+    hideToast();
+    await Promise.all(waiting);
+    api.logout();
+    clearLocalData();
+    showLogin();
+  });
+
   /* ---------- Start ---------- */
   $('#demo-banner').hidden = !DEMO;
-  render();
-  load();
+  if (session.get()) showApp();
+  else showLogin();
 })();

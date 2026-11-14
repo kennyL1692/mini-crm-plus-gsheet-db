@@ -19,13 +19,36 @@
       <span class="brand-icon material-symbols-rounded" aria-hidden="true">contacts</span>
       <h1>Mini CRM</h1>
     </div>
-    <button id="refresh-btn" class="icon-btn" type="button" aria-label="Refresh" title="Refresh">
-      <span class="material-symbols-rounded">refresh</span>
-    </button>
+    <div class="top-actions app-only">
+      <button id="refresh-btn" class="icon-btn" type="button" aria-label="Refresh" title="Refresh">
+        <span class="material-symbols-rounded">refresh</span>
+      </button>
+      <button id="logout-btn" class="icon-btn" type="button" aria-label="Log out" title="Log out">
+        <span class="material-symbols-rounded">logout</span>
+      </button>
+    </div>
     <div id="progress" class="progress" hidden><div class="progress-bar"></div></div>
   </header>
 
-  <main class="container">
+  <section id="login-view" class="login-view" hidden>
+    <form id="login-form" class="login-card" novalidate>
+      <span class="login-icon material-symbols-rounded" aria-hidden="true">lock</span>
+      <h2>Sign in</h2>
+      <p class="login-sub">Enter the password to open your CRM</p>
+      <label class="field">
+        <input id="password" name="password" type="password" placeholder=" " autocomplete="current-password" required>
+        <span>Password</span>
+        <button type="button" id="toggle-pw" class="icon-btn pw-toggle" aria-label="Show password">
+          <span class="material-symbols-rounded">visibility</span>
+        </button>
+      </label>
+      <p id="login-error" class="form-error" role="alert" hidden></p>
+      <p id="demo-hint" class="login-hint" hidden>Demo password: <strong>demo</strong></p>
+      <button id="login-btn" type="submit" class="btn btn-filled login-btn">Sign in</button>
+    </form>
+  </section>
+
+  <main class="container app-only">
     <div id="demo-banner" class="banner" hidden>
       <span class="material-symbols-rounded" aria-hidden="true">info</span>
       <span><strong>Demo mode.</strong> Data is saved in this browser only. Add your Apps Script URL in <code>config.js</code> to use Google Sheets.</span>
@@ -43,7 +66,7 @@
     <section id="list" aria-live="polite"></section>
   </main>
 
-  <button id="fab" class="fab" type="button" aria-label="New contact">
+  <button id="fab" class="fab app-only" type="button" aria-label="New contact">
     <span class="material-symbols-rounded">add</span>
     <span class="fab-label">New contact</span>
   </button>
